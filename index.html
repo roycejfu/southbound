@@ -741,10 +741,22 @@ function renderMonthly() {
 // ============================================================
 // History Tab
 // ============================================================
-const MONTHS = ['2026-01','2026-02','2026-03','2026-04','2026-05','2026-06','2026-07','2026-08'];
-const MONTH_LABELS = ['1月','2月','3月','4月','5月','6月','7月','8月'];
+// 月份卡片由数据层动态生成（2026-11-07 修复）：数据新增月份时前端无需再改代码。
+// 取 reports 覆盖月份与 monthly_reports 的并集，保证「有月报但当月尚无日报」也有入口。
+// 注意：不要再硬编码 MONTHS —— 旧版只到 8 月，导致 9/10/11 月汇总没有卡片入口。
+let MONTHS = [];
+let MONTH_LABELS = [];
+function refreshMonths() {
+  const set = new Set();
+  (gData.reports || []).forEach(r => set.add(r.date.substring(0, 7)));
+  (gData.monthly_reports || []).forEach(m => set.add(m.month));
+  MONTHS = Array.from(set).sort();
+  const multiYear = MONTHS.length > 0 && MONTHS.some(x => x.substring(0, 4) !== MONTHS[0].substring(0, 4));
+  MONTH_LABELS = MONTHS.map(m => (multiYear ? m.substring(0, 4) + '年' : '') + parseInt(m.substring(5), 10) + '月');
+}
 
 function renderMonths() {
+  refreshMonths();
   const grid = document.getElementById('monthGrid');
   grid.innerHTML = MONTHS.map((m, i) =>
     '<div class="month-card" data-month="' + m + '" onclick="filterMonth(\'' + m + '\')">' + MONTH_LABELS[i] + '</div>'
