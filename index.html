@@ -89,19 +89,6 @@
   .month-card:hover { border-color: #1a1a2e; }
   .month-card.sel { background: #1a1a2e; color: #fff; border-color: #1a1a2e; }
 
-  /* Monthly net-buy overview (2026-11-07) */
-  .mno-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; margin-bottom: 20px; }
-  .mno-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
-  .mno-note { font-size: 11.5px; color: var(--text-tertiary); line-height: 1.65; margin-bottom: 12px; }
-  .mno-row { display: flex; align-items: center; gap: 10px; padding: 4px 6px; border-radius: 6px; cursor: pointer; transition: background 0.15s; }
-  .mno-row:hover { background: rgba(74,108,247,0.07); }
-  .mno-row.sel { background: rgba(74,108,247,0.13); }
-  .mno-label { width: 42px; flex: none; font-size: 12px; color: var(--text-secondary); }
-  .mno-track { position: relative; flex: 1; height: 14px; background: rgba(127,127,127,0.08); border-radius: 3px; }
-  .mno-zero { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--border); }
-  .mno-bar { position: absolute; top: 2px; height: 10px; border-radius: 2px; }
-  .mno-val { width: 86px; flex: none; text-align: right; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
-
   /* Report list */
   .report-list { margin-bottom: 24px; }
   .r-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; }
@@ -260,9 +247,6 @@
 <div class="tab-content" id="historySection">
   <div class="section-title">历史报告</div>
   <div class="month-grid" id="monthGrid"></div>
-
-  <!-- Monthly net-buy overview -->
-  <div class="mno-card" id="monthlyNetOverview"></div>
 
   <!-- Monthly Statistics Panel -->
   <div class="monthly-report" id="monthlyReport"></div>
@@ -771,39 +755,6 @@ function refreshMonths() {
   MONTH_LABELS = MONTHS.map(m => (multiYear ? m.substring(0, 4) + '年' : '') + parseInt(m.substring(5), 10) + '月');
 }
 
-// 月度净买入一览（2026-11-07 新增）：各月净额横向对比，零轴居中，净买入红 / 净卖出绿。
-// 数据来源 monthly_reports.total_net（东方财富逐日披露加总），点击任一行切换到该月。
-function renderMonthlyNetOverview(selectedMonth) {
-  const el = document.getElementById('monthlyNetOverview');
-  const rows = (gData.monthly_reports || []).slice().sort((a, b) => a.month.localeCompare(b.month));
-  if (!rows.length) { el.style.display = 'none'; return; }
-  el.style.display = '';
-  const maxAbs = Math.max(...rows.map(r => Math.abs(r.total_net)), 1);
-  el.innerHTML =
-    '<div class="mno-title">月度净买入一览 · ' + rows.length + ' 个月</div>' +
-    '<div class="mno-note">单位：亿港元。净买入为正（红）、净卖出为负（绿），条长按各月绝对值的最大值归一；点击任一行可切到该月统计与日报。口径为东方财富逐日披露加总，与「十大成交个股榜」口径不可相减。</div>' +
-    rows.map(r => {
-      const v = r.total_net;
-      const pos = v >= 0;
-      const w = Math.min(Math.abs(v) / maxAbs * 48, 48);
-      const bar = pos
-        ? '<span class="mno-bar" style="left:50%;width:' + w + '%;background:' + RED + '"></span>'
-        : '<span class="mno-bar" style="right:50%;width:' + w + '%;background:' + GREEN + '"></span>';
-      return '<div class="mno-row' + (r.month === selectedMonth ? ' sel' : '') + '" data-month="' + r.month + '">' +
-        '<span class="mno-label">' + parseInt(r.month.substring(5), 10) + '月</span>' +
-        '<span class="mno-track"><span class="mno-zero"></span>' + bar + '</span>' +
-        '<span class="mno-val" style="color:' + (pos ? RED : GREEN) + '">' + (pos ? '+' : '') + v.toFixed(1) + ' 亿</span>' +
-        '</div>';
-    }).join('');
-  if (!el.dataset.bound) {
-    el.addEventListener('click', e => {
-      const row = e.target.closest('.mno-row');
-      if (row) filterMonth(row.dataset.month);
-    });
-    el.dataset.bound = '1';
-  }
-}
-
 function renderMonths() {
   refreshMonths();
   const grid = document.getElementById('monthGrid');
@@ -835,9 +786,8 @@ function filterMonth(month) {
       '</div>';
   }).join('');
 
-  // Render monthly report + net-buy overview if month data exists
+  // Render monthly report if month data exists
   renderMonthlyReport(month);
-  renderMonthlyNetOverview(month);
 }
 
 function renderMonthlyReport(month) {
@@ -870,29 +820,39 @@ function renderMonthlyReport(month) {
     '<div class="mr-metric"><div class="mr-val" style="color:' + RED + '">+' + mi.amount.toFixed(1) + ' 亿</div><div class="mr-lbl">最大单日净流入</div><div class="mr-sub">' + (mi.date || '峰值') + '</div></div>' +
     '<div class="mr-metric"><div class="mr-val" style="color:' + GREEN + '">' + (mo.amount <= 0 ? mo.amount.toFixed(1) : '-' + mo.amount.toFixed(1)) + ' 亿</div><div class="mr-lbl">最大单日净流出</div><div class="mr-sub">' + (mo.date || '谷值') + '</div></div>';
 
-  // Stock ranking placeholder — accumulating real data
-  const stocksHtml = '<div class="mr-data-note"><strong>月度个股排名（数据积累中）</strong><br>自2026年8月11日起，每日自动化任务将存储当日十大成交个股数据。积累足够交易日后，系统将自动生成真实月度TOP10买卖排名。</div>';
-
-  // Sector flows
-  let sectorHtml = '';
-  if (mr.sector_flows && mr.sector_flows.length > 0) {
-    const maxAbs = Math.max(...mr.sector_flows.map(s => Math.abs(s.net_flow)), 1);
-    sectorHtml = '<div class="mr-sector"><div class="mr-section-title">板块资金流入/流出</div>' +
-      '<div class="sf-header"><span class="sf-legend-dot" style="background:#E24B4A"></span>流入 <span class="sf-legend-dot" style="background:#639922;margin-left:8px;"></span>流出</div>';
-    sectorHtml += mr.sector_flows.map(s => {
-      const isInflow = s.net_flow >= 0;
-      const pct = Math.abs(s.net_flow) / maxAbs * 100;
-      const barClass = isInflow ? 'inflow' : 'outflow';
-      const trendBg = isInflow ? 'var(--red-bg)' : 'var(--green-bg)';
-      const trendColor = isInflow ? 'var(--red)' : 'var(--green)';
+  // 个股净买入 / 净卖出汇总（2026-11-07：应用户要求去掉板块汇总，改为直接按个股）
+  // 数据源 monthly_stock_flow[month].top_buy / top_sell —— 仅统计当日进入「港股通十大成交个股」榜的标的。
+  let stockHtml = '';
+  const msf = gData.monthly_stock_flow && gData.monthly_stock_flow[month];
+  if (!msf || !((msf.top_buy || []).length || (msf.top_sell || []).length)) {
+    stockHtml = '<div class="mr-data-note"><strong>个股汇总</strong><br>该月尚无逐日「十大成交个股」明细（自 2026-08 起记录），仅展示上方月度统计。</div>';
+  } else {
+    const buys = (msf.top_buy || []).slice(0, 8);
+    const sells = (msf.top_sell || []).slice(0, 8);
+    const maxAbs = Math.max(...buys.concat(sells).map(r => Math.abs(r.net)), 1);
+    const rowHtml = (r, isBuy) => {
+      const pct = Math.abs(r.net) / maxAbs * 100;
+      const barClass = isBuy ? 'inflow' : 'outflow';
+      const trendBg = isBuy ? 'var(--red-bg)' : 'var(--green-bg)';
+      const trendColor = isBuy ? 'var(--red)' : 'var(--green)';
       return '<div class="sector-row">' +
-        '<span class="sr-name">' + s.sector + '</span>' +
+        '<span class="sr-name">' + r.name + '<br><span style="font-size:10px;font-weight:400;color:var(--text-tertiary);">' + r.code + '</span></span>' +
         '<div class="sr-bar-wrap"><div class="sr-bar ' + barClass + '" style="width:' + pct + '%"></div></div>' +
-        '<span class="sr-amount" style="color:' + (isInflow ? RED : GREEN) + '">' + (isInflow ? '+' : '') + s.net_flow.toFixed(1) + ' 亿</span>' +
-        '<span class="sr-trend" style="background:' + trendBg + ';color:' + trendColor + '">' + s.trend + '</span>' +
+        '<span class="sr-amount" style="color:' + (isBuy ? RED : GREEN) + '">' + (r.net >= 0 ? '+' : '') + r.net.toFixed(1) + ' 亿</span>' +
+        '<span class="sr-trend" style="background:' + trendBg + ';color:' + trendColor + '">' + r.days + '天</span>' +
         '</div>';
-    }).join('');
-    sectorHtml += '</div>';
+    };
+    const totalTxt = (msf.month_total_net >= 0 ? '+' : '') + Number(msf.month_total_net).toFixed(1) + ' 亿';
+    stockHtml = '<div class="mr-sector">' +
+      '<div class="mr-section-title">个股净买入 / 净卖出汇总 · 全月净额 ' + totalTxt + '</div>' +
+      '<div class="sf-header"><span class="sf-legend-dot" style="background:#E24B4A"></span>净买入 ' +
+        '<span class="sf-legend-dot" style="background:#639922;margin-left:8px;"></span>净卖出 ' +
+        '<span style="color:var(--text-tertiary);">仅统计当日进入十大成交个股榜的标的，非该股全月南向总额；标签为上榜天数。</span></div>' +
+      '<div style="font-size:12px;font-weight:600;color:var(--red);margin:10px 0 2px;">净买入 TOP' + buys.length + '</div>' +
+      buys.map(r => rowHtml(r, true)).join('') +
+      '<div style="font-size:12px;font-weight:600;color:var(--green);margin:14px 0 2px;">净卖出 TOP' + sells.length + '</div>' +
+      sells.map(r => rowHtml(r, false)).join('') +
+      '</div>';
   }
 
   // Commentary
@@ -908,8 +868,7 @@ function renderMonthlyReport(month) {
     '</div>' +
     '<div class="mr-subtitle">月度统计报告 · 数据来源：东方财富 · 截至 ' + month + ' 月末</div>' +
     '<div class="mr-metrics">' + metricsHtml + '</div>' +
-    stocksHtml +
-    sectorHtml +
+    stockHtml +
     commentaryHtml;
 }
 
