@@ -89,6 +89,19 @@
   .month-card:hover { border-color: #1a1a2e; }
   .month-card.sel { background: #1a1a2e; color: #fff; border-color: #1a1a2e; }
 
+  /* Monthly net-buy overview (2026-11-07) */
+  .mno-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; margin-bottom: 20px; }
+  .mno-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .mno-note { font-size: 11.5px; color: var(--text-tertiary); line-height: 1.65; margin-bottom: 12px; }
+  .mno-row { display: flex; align-items: center; gap: 10px; padding: 4px 6px; border-radius: 6px; cursor: pointer; transition: background 0.15s; }
+  .mno-row:hover { background: rgba(74,108,247,0.07); }
+  .mno-row.sel { background: rgba(74,108,247,0.13); }
+  .mno-label { width: 42px; flex: none; font-size: 12px; color: var(--text-secondary); }
+  .mno-track { position: relative; flex: 1; height: 14px; background: rgba(127,127,127,0.08); border-radius: 3px; }
+  .mno-zero { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--border); }
+  .mno-bar { position: absolute; top: 2px; height: 10px; border-radius: 2px; }
+  .mno-val { width: 86px; flex: none; text-align: right; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
   /* Report list */
   .report-list { margin-bottom: 24px; }
   .r-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; }
@@ -247,6 +260,9 @@
 <div class="tab-content" id="historySection">
   <div class="section-title">历史报告</div>
   <div class="month-grid" id="monthGrid"></div>
+
+  <!-- Monthly net-buy overview -->
+  <div class="mno-card" id="monthlyNetOverview"></div>
 
   <!-- Monthly Statistics Panel -->
   <div class="monthly-report" id="monthlyReport"></div>
@@ -755,6 +771,39 @@ function refreshMonths() {
   MONTH_LABELS = MONTHS.map(m => (multiYear ? m.substring(0, 4) + '年' : '') + parseInt(m.substring(5), 10) + '月');
 }
 
+// 月度净买入一览（2026-11-07 新增）：各月净额横向对比，零轴居中，净买入红 / 净卖出绿。
+// 数据来源 monthly_reports.total_net（东方财富逐日披露加总），点击任一行切换到该月。
+function renderMonthlyNetOverview(selectedMonth) {
+  const el = document.getElementById('monthlyNetOverview');
+  const rows = (gData.monthly_reports || []).slice().sort((a, b) => a.month.localeCompare(b.month));
+  if (!rows.length) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  const maxAbs = Math.max(...rows.map(r => Math.abs(r.total_net)), 1);
+  el.innerHTML =
+    '<div class="mno-title">月度净买入一览 · ' + rows.length + ' 个月</div>' +
+    '<div class="mno-note">单位：亿港元。净买入为正（红）、净卖出为负（绿），条长按各月绝对值的最大值归一；点击任一行可切到该月统计与日报。口径为东方财富逐日披露加总，与「十大成交个股榜」口径不可相减。</div>' +
+    rows.map(r => {
+      const v = r.total_net;
+      const pos = v >= 0;
+      const w = Math.min(Math.abs(v) / maxAbs * 48, 48);
+      const bar = pos
+        ? '<span class="mno-bar" style="left:50%;width:' + w + '%;background:' + RED + '"></span>'
+        : '<span class="mno-bar" style="right:50%;width:' + w + '%;background:' + GREEN + '"></span>';
+      return '<div class="mno-row' + (r.month === selectedMonth ? ' sel' : '') + '" data-month="' + r.month + '">' +
+        '<span class="mno-label">' + parseInt(r.month.substring(5), 10) + '月</span>' +
+        '<span class="mno-track"><span class="mno-zero"></span>' + bar + '</span>' +
+        '<span class="mno-val" style="color:' + (pos ? RED : GREEN) + '">' + (pos ? '+' : '') + v.toFixed(1) + ' 亿</span>' +
+        '</div>';
+    }).join('');
+  if (!el.dataset.bound) {
+    el.addEventListener('click', e => {
+      const row = e.target.closest('.mno-row');
+      if (row) filterMonth(row.dataset.month);
+    });
+    el.dataset.bound = '1';
+  }
+}
+
 function renderMonths() {
   refreshMonths();
   const grid = document.getElementById('monthGrid');
@@ -786,8 +835,9 @@ function filterMonth(month) {
       '</div>';
   }).join('');
 
-  // Render monthly report if month data exists
+  // Render monthly report + net-buy overview if month data exists
   renderMonthlyReport(month);
+  renderMonthlyNetOverview(month);
 }
 
 function renderMonthlyReport(month) {
@@ -806,13 +856,19 @@ function renderMonthlyReport(month) {
   else if (mr.trend === '震荡') { trendClass = 'mix'; trendText = '资金震荡'; }
 
   // Metrics
+  // max_inflow / max_outflow 自 2026-11 起为 {date, amount} 对象（旧数据曾是数字），两种都兼容；
+  // 旧版直接 .toFixed() 会对对象抛 TypeError，导致整个月度面板空白。
+  const extVal = v => (v && typeof v === 'object')
+    ? { amount: Number(v.amount) || 0, date: v.date || '' }
+    : { amount: Number(v) || 0, date: '' };
+  const mi = extVal(mr.max_inflow), mo = extVal(mr.max_outflow);
   const metricsHtml =
     '<div class="mr-metric"><div class="mr-val" style="color:' + (mr.total_net >= 0 ? RED : GREEN) + '">' +
-    (mr.total_net >= 0 ? '+' : '') + mr.total_net.toFixed(1) + ' 亿</div><div class="mr-lbl">月度净流入</div><div class="mr-sub">合计</div></div>' +
+    (mr.total_net >= 0 ? '+' : '') + mr.total_net.toFixed(1) + ' 亿</div><div class="mr-lbl">月度净买入</div><div class="mr-sub">负值为净卖出</div></div>' +
     '<div class="mr-metric"><div class="mr-val">' + (mr.avg_daily >= 0 ? '+' : '') + mr.avg_daily.toFixed(1) + ' 亿</div><div class="mr-lbl">日均净流向</div><div class="mr-sub">' +
     mr.inflow_days + '天净流入 / ' + mr.outflow_days + '天净流出</div></div>' +
-    '<div class="mr-metric"><div class="mr-val" style="color:' + RED + '">+' + mr.max_inflow.toFixed(1) + ' 亿</div><div class="mr-lbl">最大单日净流入</div><div class="mr-sub">峰值</div></div>' +
-    '<div class="mr-metric"><div class="mr-val" style="color:' + GREEN + '">' + (mr.max_outflow <= 0 ? mr.max_outflow.toFixed(1) : '-' + mr.max_outflow.toFixed(1)) + ' 亿</div><div class="mr-lbl">最大单日净流出</div><div class="mr-sub">谷值</div></div>';
+    '<div class="mr-metric"><div class="mr-val" style="color:' + RED + '">+' + mi.amount.toFixed(1) + ' 亿</div><div class="mr-lbl">最大单日净流入</div><div class="mr-sub">' + (mi.date || '峰值') + '</div></div>' +
+    '<div class="mr-metric"><div class="mr-val" style="color:' + GREEN + '">' + (mo.amount <= 0 ? mo.amount.toFixed(1) : '-' + mo.amount.toFixed(1)) + ' 亿</div><div class="mr-lbl">最大单日净流出</div><div class="mr-sub">' + (mo.date || '谷值') + '</div></div>';
 
   // Stock ranking placeholder — accumulating real data
   const stocksHtml = '<div class="mr-data-note"><strong>月度个股排名（数据积累中）</strong><br>自2026年8月11日起，每日自动化任务将存储当日十大成交个股数据。积累足够交易日后，系统将自动生成真实月度TOP10买卖排名。</div>';
